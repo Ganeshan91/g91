@@ -24,4 +24,419 @@ initial
   forever #10 clk++;
 endinterface
 
+`include uvm_macros.svh
+typedef class my_sequencer ;
+class tb_seq_item extends uvm_seq_item;
+rand bit [7:0] inp[$];
+  `uvm_object_utils_begin(tb_seq_item)
+    `uvm_field_queue_int(inp,UVM_DEFAULT)
+  `uvm_object_utils_end 
+  
+  function new(name="tb_seq_item");
+    super.new(name);
+  endfunction
+endclass
 
+virtual class tb_seq_base extends uvm_sequence #(tb_seq_item);
+  function new(name="tb_seq_base");
+    super.new(name);
+  endfunction
+virtual task pre_body();
+  if(starting_phase !=null)
+    `uvm_info(get_type_name(),$sformat("%s pre_body raising %s objection",get_sequence_path(),starting_phase.get_name()),UVM_HIGH)
+    starting_phase.raise_ojection(this);
+endtask
+virtual task post_body();
+  if(starting_phase !=null)
+    `uvm_info(get_type_name(),$sformat("%s post_body dropping %s objection",get_sequence_path(),starting_phase.get_name()),UVM_HIGH)
+    starting_phase.raise_ojection(this);
+endtask
+endclass
+
+class tb_driv_wr_data_vseq extends tb_seq_base;
+rand bit [7:0] inpp[$];
+  `uvm_object utils(tb_driv_wr_data_vseq)
+  function new(name="tb_driv_wr_data_vseq");
+    super.new(name);
+  endfunction
+  virtual task body();
+    `uvm_do_with(req,{req.inp.size()==6;})
+  endtask   
+endclass
+
+class tb_driv_rd_data_vseq extends tb_seq_base;
+rand bit [7:0] inpp[$];
+  `uvm_object utils(tb_driv_rd_data_vseq)
+  function new(name="tb_driv_rd_data_vseq");
+    super.new(name);
+  endfunction
+  virtual task body();
+    `uvm_do_with(req,{req.inp.size()==6;})
+  endtask   
+endclass
+
+class my_sequence_phase extends tb_seq_base;
+my_sequencer seqr_h;
+tb_driv_wr_data_vseq tb_driv_wr;
+tb_driv_rd_data_vseq tb_drive_rd;
+uvm_sequencer#(tb_seq_item) tb_seqr_rd;
+uvm_sequencer#(tb_seq_item) tb_seqr_wr;
+  `uvm_object utils(my_sequence_phase)
+  function new(name="my_sequence_phase");
+    super.new(name);
+  endfunction
+  virtual task body();
+    super.body();
+    if(!$cast(seqr_h,m_sequencer))
+      `uvm_error(get_type_name(),"casting failled")
+    tb_seqr_rd =seqr_h.tb_seqr_rd;
+    tb_seqr_wr =seqr_h.tb_seqr_wr;
+    `uvm_don_on_with(tb_driv_wr,tb_seqr_wr,{tb_driv_wr.inpp.size()==6};)
+    `uvm_don_on_with(tb_driv_wr,tb_seqr_wr,{tb_driv_wr.inpp.size()==6};)
+  endtask   
+  virtual task pre_body();
+  if(starting_phase !=null)
+    `uvm_info(get_type_name(),$sformat("%s pre_body raising %s objection",get_sequence_path(),starting_phase.get_name()),UVM_HIGH)
+    starting_phase.raise_ojection(this);
+endtask
+virtual task post_body();
+  if(starting_phase !=null)
+    `uvm_info(get_type_name(),$sformat("%s post_body dropping %s objection",get_sequence_path(),starting_phase.get_name()),UVM_HIGH)
+    starting_phase.raise_ojection(this);
+endtask
+endclass
+
+class my_sequencer extends uvm_sequencer ;
+uvm_sequencer#(tb_seq_item) tb_seqr_rd;
+uvm_sequencer#(tb_seq_item) tb_seqr_wr;
+  `uvm_component utils(my_sequencer)
+  function new(name="my_sequencer",uvm_component parent =null);
+    super.new(name,parent);
+  endfunction
+endclass
+
+class tb_driver_wr extends uvm_driver#(tb_seq_item);
+virtual interface mem_if mif;
+ `uvm_component utils(tb_driver_wr)
+  function new(name="tb_driver_wr");
+    super.new(name,parent);
+    if(!(uvm_config_db#(virtual mem_if)::get(null,"","mif",mif)))
+    begin
+       `uvm_error("Virtual interfface  must be set")
+    end
+  endfunction
+  function void build_phase(uvm_phase phase);
+    super.build_phase();
+  endfunction
+  
+  virtual task run_phase(uvm_phase phase);
+    send;
+  endtask
+  
+  task send();
+    while(1)
+    begin
+      seq_item_port.get_next_item(req);
+      $cast(rsp,req);
+      send_data(rsp);
+      seq_item_port.item_done();
+    end
+  endtask
+  
+  task send_data();
+  begin
+    mif.size =rsp.inp.size();
+    @(negedge mif.clk) mif.st_wr_mon=1;
+    for(int i=0;i<mif.size();i++)
+    begin
+      @(posedge mif.clk)
+      mif.addr<=i;
+      mif.we<=1;
+      mif.cs<=1;
+      mif.din<=rsp.inp[addr];
+    end
+    @(posedge mif.clk)
+    mif.cs<=0;
+    mif.we<=0;
+  end
+  endtask
+  endclass
+ 
+ class tb_driver_rd extends uvm_driver#(tb_seq_item);
+virtual interface mem_if mif;
+ `uvm_component utils(tb_driver_rd)
+  function new(name="tb_driver_rd");
+    super.new(name,parent);
+    if(!(uvm_config_db#(virtual mem_if)::get(null,"","mif",mif)))
+    begin
+       `uvm_error("Virtual interfface  must be set")
+    end
+  endfunction
+  function void build_phase(uvm_phase phase);
+    super.build_phase();
+  endfunction
+  
+  virtual task run_phase(uvm_phase phase);
+    rcv;
+  endtask
+  
+  task rcv();
+    while(1)
+    begin
+      seq_item_port.get_next_item(req);
+      $cast(rsp,req);
+      rcvv;
+      seq_item_port.item_done();
+    end
+  endtask
+  
+  task rcvv();
+  begin
+    mif.size =rsp.inp.size();
+    @(negedge mif.clk) mif.st_rd_mon=1;
+    for(int i=0;i<mif.size();i++)
+    begin
+      @(posedge mif.clk)
+      mif.addr<=i
+      mif.cs<=1;
+    end
+    @(posedge mif.clk)
+    mif.cs<=0;
+  end
+  endtask
+  endclass
+  
+  
+class tb_monitor_wr extends uvm_monitor;
+virtual interface mem_if mif;
+uvm_analysis_port #(tb_seq_item) an_port;
+ `uvm_component utils(tb_monitor_wr)
+  function new(name="tb_monitor_wr");
+    super.new(name,parent);
+    if(!(uvm_config_db#(virtual mem_if)::get(null,"","mif",mif)))
+    begin
+       `uvm_error("Virtual interfface  must be set")
+    end
+  endfunction
+  function void build_phase(uvm_phase phase);
+    super.build_phase();
+  endfunction
+  
+  virtual task run_phase(uvm_phase phase);
+   while(1)  
+   begin
+     recv_wr_data;
+   end
+  endtask
+  
+  task recv_wr_data();
+  tb_seq_item item_mh=new();
+  begin
+    wait(mif.st_wr_mon==1);
+    for(int i=0;i<mif.size;i++)
+    begin
+      @(posedge mif.clk)
+      #1;
+      item_mh.inp[i] =mif.din;
+    end
+    an_port.write(item_mh);
+    mif.st_wr_mon=0;
+  end
+  endtask
+endclass   
+
+class tb_monitor_rd extends uvm_monitor;
+virtual interface mem_if mif;
+uvm_analysis_port #(tb_seq_item) an_port;
+ `uvm_component utils(tb_monitor_rd)
+  function new(name="tb_monitor_rd");
+    super.new(name,parent);
+    if(!(uvm_config_db#(virtual mem_if)::get(null,"","mif",mif)))
+    begin
+       `uvm_error("Virtual interfface  must be set")
+    end
+  endfunction
+  function void build_phase(uvm_phase phase);
+    super.build_phase();
+  endfunction
+  
+  virtual task run_phase(uvm_phase phase);
+   while(1)  
+   begin
+     recv_rd_data;
+   end
+  endtask
+  
+  task recv_wr_data();
+  tb_seq_item item_mh=new();
+  begin
+    wait(mif.st_rd_mon==1);
+    @(posedge mif.clk);
+    for(int i=0;i<mif.size;i++)
+    begin
+      @(posedge mif.clk)
+      #1;
+      item_mh.inp[i] =mif.dout;
+    end
+    an_port.write(item_mh);
+    mif.st_wr_mon=0;
+  end
+  endtask
+endclass
+
+`uvm_analysis_imp_decl(_wget)
+`uvm_analysis_imp_decl(_rget)
+class tb_scoreboard extends uvm_scoreboard;
+virtual interface mem_if mif;
+static bit comp;
+uvm_analysis_imp_wget #(tb_seq_item,tb_scoreboard) wan_imp;
+uvm_analysis_imp_rget #(tb_seq_item,tb_scoreboard) ran_imp;
+tb_seq_item item_e;
+tb_seq_item item_a;
+ `uvm_component utils(tb_scoreboard)
+  function new(name="tb_scoreboard");
+    super.new(name,parent);
+    if(!(uvm_config_db#(virtual mem_if)::get(null,"","mif",mif)))
+    begin
+       `uvm_error("Virtual interfface  must be set")
+    end
+  endfunction
+  function void build_phase(uvm_phase phase);
+    super.build_phase();
+    wan_imp=new("wan_imp",this);
+    ran_imp=new("ran_imp",this);
+  endfunction
+   
+  virtual task run_phase(uvm_phase phase);
+    wait(comp==1);
+    comp_data;
+  endtask
+  
+  function comp_data;
+  uvm_comparer com_policy=new();
+    com_policy.sev=UVM_ERROR;
+    com_policy.show_max=10;
+    item_e.compare(item_a,comp_policy);
+  endfunction  
+  function write_wget(tb_seq_item item_ee);
+    item_e = item_ee;
+  endfunction
+  
+  function write_rget(tb_seq_item item_ee);
+    item_a = item_ee;
+  endfunction
+ endclass
+ 
+ class tb_agent_wr extends uvm_agent;
+ tb_dirver_wr drv_wr ;
+ tb_monitor_wr mon_wr;
+ uvm_sequencer#(tb_seq_item) seqr;
+  `uvm_component utils(tb_agent_wr)
+  function new(name="tb_agent_wr");
+    super.new(name,parent);
+  endfunction
+  
+  function void build_phase(uvm_phase phase);
+    super.build_phase();
+    drv_wr =tb_driver_wr::type_id::create("drv_wr",this);
+    mon_wr =tb_monitor_wr::type_id::create("mon_wr",this);
+    seqr =uvm_sequencer#(tb_seq_item)::type_id::create("seqr",this);
+  endfunction
+  
+  function void  connect_phase(uvm_phase phase);
+     super.connect_phase(phase);
+     drv_wr.seq_item_port.connect(seqr.seq_item_export);
+  endfcuntion   
+ endclass
+ 
+ class tb_agent_rd extends uvm_agent;
+ tb_dirver_rd drv_rd ;
+ tb_monitor_rd mon_rd;
+ uvm_sequencer#(tb_seq_item) seqr_rd;
+  `uvm_component utils(tb_agent_rd)
+  function new(name="tb_agent_rd");
+    super.new(name,parent);
+  endfunction
+  
+  function void build_phase(uvm_phase phase);
+    super.build_phase();
+    drv_rd =tb_driver_rd::type_id::create("drv_rd",this);
+    mon_rd =tb_monitor_rd::type_id::create("mon_rd",this);
+    seqr_rd =uvm_sequencer#(tb_seq_item)::type_id::create("seqr_rd",this);
+  endfunction
+  
+  function void  connect_phase(uvm_phase phase);
+     super.connect_phase(phase);
+     drv_rd.seq_item_port.connect(seqr_rd.seq_item_export);
+  endfcuntion   
+ endclass
+ 
+ class tb_env extends uvm_env;
+ tb_agent_wr tb_agt_wr ;
+ tb_agent_rd tb_agt_rd;
+ tb_scoreboadr sb;
+  `uvm_component utils(tb_env)
+  function new(name="tb_env");
+    super.new(name,parent);
+  endfunction
+  
+  function void build_phase(uvm_phase phase);
+    super.build_phase();
+    
+    tb_agt_wr =tb_agent_wr::type_id::create("tb_agt_wr",this);
+    tb_agt_rd =tb_agent_rd::type_id::create("tb_agt_rd",this);
+    sb =tb_scoreboard::type_id::create("sb",this);
+  endfunction
+  
+  function void  connect_phase(uvm_phase phase);
+     super.connect_phase(phase);
+     tb_agt_rd.mon_rd.an_port.connect(sb.ran_imp);
+     tb_agt_wr.mon_wr.an_port.connect(sb.wan_imp);
+  endfcuntion
+endclass
+ 
+class my_test extends uvm_test;
+my_sequencer seqr_h;
+tb_env env_h;
+   `uvm_component_utils(my_test)
+   
+   function new(string new="my_test",uvm_component parent =null);
+     super.new(name,parent);
+   endfunction
+  
+  function void build_phase(uvm_phase phase);
+    super.build_phase();
+    uvm_config_db#(uvm_object_wrapper)::set(this,"seqr_h.main_phase","default_sequence",my_sequnce_phase::type_id::get());
+    env_h=tb__env::type_id::create("env_h",this);
+    seqr_h=my_sequencer::type_id::create("seqr_h",this);
+  endfunction
+  
+  function void connect_phase(uvm_phase phase);
+    super.connect_phase(phase);
+    seqr_h.tb_seqr_wr=env_h.tb_agt_wr.seqr;
+    seqr_h.tb_seqr_rd=env_h.tb_agt_rd.seqr_rd;
+  endfunction  
+endclass
+
+module tb_top();
+mem_if mif();
+memoRy meM(
+.clk  (mif.clk),
+.cs   (mif.cs),
+.we   (mif.we),
+.din  (mif.din),
+.dout (mif.dout)
+);
+intial
+begin
+  uvm_config_db#(virtual mem_if)::set(uvm_root::get(),"*","mif",mif);
+  run_test;
+  #100us;
+end  
+endmodule
+
+
+
+
+ 
+ 
