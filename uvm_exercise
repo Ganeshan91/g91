@@ -14,3 +14,14 @@ begin
   end    
 end  
 endmodule
+
+interface mem_if ();
+bit clk,st_wr_mon,st_rd_mon;
+logic we,cs;
+logic[7:0] din,dout;
+int size;
+initial 
+  forever #10 clk++;
+endinterface
+
+
