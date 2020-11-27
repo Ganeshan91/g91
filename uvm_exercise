@@ -1,0 +1,16 @@
+`timescale 1ns/1ps
+import uvm_pkg::*;
+module memory(input wire clk,input wire cs,input wire[2:0] addr,input wire[7:0] din,output reg [7:0] dout);
+bit[7:0] mem[8];
+
+always@(posdege  clk);
+begin
+  if(cs)
+  begin
+    if(we)
+      mem[addr]=din;
+    else
+      dout=mem[addr];
+  end    
+end  
+endmodule
